@@ -7,7 +7,7 @@ import streamlit as st
 st.set_page_config(page_title="Пошукова База Даних", layout="wide")
 
 
-# --- НАЛАШТУВАННЯ ФОНОВОГО ЗОБРАЖЕННЯ ---
+# --- НАЛАШТУВАННЯ ФОНОВОГО ЗОБРАЖЕННЯ ТА КОЛЬОРУ ТЕКСТУ ДЛЯ МОБІЛЬНИХ ---
 def get_base64_image(image_path):
     try:
         with open(image_path, "rb") as img_file:
@@ -17,6 +17,28 @@ def get_base64_image(image_path):
 
 
 bg_image_base64 = get_base64_image("background.png")
+
+# Примусово фіксуємо темний колір тексту для підписів полів (labels) на телефонах
+st.markdown(
+    """
+    <style>
+    /* Робимо підписи полів введення завжди чорними */
+    label, .stWidgetLabel p, stMarkdownInsideButton p {
+        color: #111111 !important;
+        font-weight: 600 !important;
+    }
+    /* Заголовки */
+    h1, h2, h3, h4, h5, h6, .stHeading p {
+        color: #111111 !important;
+    }
+    /* Текст звичайних написів та інформаційного блоку */
+    .stMarkdown p, .stText p, .stAlert p {
+        color: #222222 !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 if bg_image_base64:
     st.markdown(
@@ -126,7 +148,8 @@ def execute_fast_feather_search(pib_query, dr_query, ipn_query):
 st.title("🔎 Система пошуку по захищеній базі")
 st.info("⚡ База даних переведена на ультра-швидкий бінарний індекс.")
 
-main_col, history_col = st.columns(2)
+# Використовуємо адаптивні колонки, які на мобільних пристроях автоматично переносяться одна під одну
+main_col, history_col = st.columns([1, 1])
 
 with main_col:
     st.markdown("### Введіть дані для пошуку:")
@@ -188,11 +211,13 @@ with main_col:
                 dr_val = item.get("Дата народження", "—")
                 ipn_val = item.get("РНОКПП", "—")
 
-                c_text, c_pop = st.columns([0.8, 0.2])
+                # Оптимальне співвідношення для мобільних екранів
+                c_text, c_pop = st.columns([0.75, 0.25])
 
                 with c_text:
                     st.markdown(
-                        f"👤 **{pib_val}** | 📅 ДН: {dr_val} | 📂 РНОКПП: {ipn_val}"
+                        f"👤 **{pib_val}** <br>📅 ДН: {dr_val} | 📂 РНОКПП: {ipn_val}",
+                        unsafe_allow_html=True
                     )
 
                 with c_pop:
@@ -202,7 +227,7 @@ with main_col:
                             st.markdown(f"**{key}:** {val}")
 
                 st.markdown(
-                    "<hr style='margin:4px 0px; border-top: 1px solid #ccc;'/>",
+                    "<hr style='margin:6px 0px; border-top: 1px solid #ccc;'/>",
                     unsafe_allow_html=True,
                 )
 
@@ -225,7 +250,6 @@ with history_col:
 
             st.write(f"• {item['text']}")
 
-            # ВИПРАВЛЕНО: Видалено параметр size="small", який викликав помилку
             if st.button("🔄 Повторити цей пошук", key=btn_key):
                 st.session_state["input_pib"] = item["pib"]
                 st.session_state["input_dr"] = item["dr"]
