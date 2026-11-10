@@ -34,53 +34,27 @@ if bg_image_base64:
         unsafe_allow_html=True,
     )
 
+# Ініціалізація історії пошуку в пам'яті сесії
+if "search_history" not in st.session_state:
+    st.session_state["search_history"] = []
 
-# --- ПЕРЕВІРКА ПАРОЛЯ ---
+
+# --- ПЕРЕВІРКА ПАРОЛЯ (БЕЗ ЛОГІНА) ---
 def check_password():
     if "password_correct" not in st.session_state:
         st.subheader("🔒 Вхід до системи")
-        user = st.text_input("Логін")
-        pas = st.text_input("Пароль", type="password")
+        pas = st.text_input("Введіть пароль для доступу:", type="password")
         if st.button("Увійти"):
-            if (
-                user == st.secrets["credentials"]["username"]
-                and pas == st.secrets["credentials"]["password"]
-            ):
+            if pas == st.secrets["credentials"]["password"]:
                 st.session_state["password_correct"] = True
                 st.rerun()
             else:
-                st.error("❌ Невірний логін або пароль")
+                st.error("❌ Невірний пароль")
         return False
     return True
 
 
 if not check_password():
-    st.stop()
-
-
-# --- ЗАВАНТАЖЕННЯ ДАНИХ ---
-@st.cache_data
-def load_and_prepare_data():
-    all_files = glob.glob("chunks/chunk_*.csv")
-    if not all_files:
-        return None
-
-    # Читаємо шматки із роздільником ';'
-    df_list = [pd.read_csv(f, dtype=str, sep=";") for f in all_files]
-    combined_df = pd.concat(df_list, ignore_index=True)
-
-    # Замінюємо порожні клітинки дефісом
-    combined_df = combined_df.fillna("—")
-    combined_df = combined_df.replace(r"^\s*$", "—", regex=True)
-
-    return combined_df
-
-
-with st.spinner("Завантаження інтерактивної бази даних..."):
-    df = load_and_prepare_data()
-
-if df is None:
-    st.error("Помилка: папка 'chunks' порожня. Запустіть split_csv.py спочатку.")
     st.stop()
 
 
@@ -92,53 +66,104 @@ def normalize_string(s):
     return s
 
 
+# --- РОЗУМНА ФУНКЦІЯ ПОШУКУ (ПОШМАТКОВА) ---
+def search_in_chunks(pib_query, dr_query, ipn_query):
+    all_files = glob.glob("chunks/chunk_*.csv")
+    if not all_files:
+        st.error("Помилка: папка 'chunks' порожня.")
+        return pd.DataFrame()
+
+    results_list = []
+
+    pib_norm = normalize_string(pib_query) if pib_query.strip() else None
+    dr_norm = normalize_string(dr_query) if dr_query.strip() else None
+    ipn_norm = normalize_string(ipn_query) if ipn_query.strip() else None
+
+    # Додаємо запит до історії пошуку
+    history_entry = []
+    if pib_query.strip():
+        history_entry.append(f"ПІБ: '{pib_query.strip()}'")
+    if dr_query.strip():
+        history_entry.append(f"ДН: '{dr_query.strip()}'")
+    if ipn_query.strip():
+        history_entry.append(f"РНОКПП: '{ipn_query.strip()}'")
+
+    if history_entry:
+        full_entry_text = ", ".join(history_entry)
+        # Уникаємо дублювання однакових підряд запитів в історії
+        if (
+            not st.session_state["search_history"]
+            or st.session_state["search_history"][-1] != full_entry_text
+        ):
+            st.session_state["search_history"].append(full_entry_text)
+
+    for f in all_files:
+        chunk = pd.read_csv(f, dtype=str, sep=";")
+        chunk = chunk.fillna("—")
+        chunk = chunk.replace(r"^\s*$", "—", regex=True)
+
+        mask = pd.Series(True, index=chunk.index)
+
+        if pib_norm:
+            mask &= chunk["Прізвище, імя, по батькові в/с"].apply(
+                lambda val: "" if val == "—" else normalize_string(val)
+            ).str.contains(pib_norm)
+
+        if dr_norm:
+            mask &= chunk["Дата народження"].apply(
+                lambda val: "" if val == "—" else normalize_string(val)
+            ).str.contains(dr_norm)
+
+        if ipn_norm:
+            mask &= chunk["РНОКПП"].apply(
+                lambda val: "" if val == "—" else normalize_string(val)
+            ).str.contains(ipn_norm)
+
+        filtered_chunk = chunk[mask]
+        if not filtered_chunk.empty:
+            results_list.append(filtered_chunk)
+
+    if results_list:
+        return pd.concat(results_list, ignore_index=True)
+    return pd.DataFrame()
+
+
 # --- ІНТЕРФЕЙС ---
 st.title("🔎 Система пошуку по захищеній базі")
-st.write(f"У системі проіндексовано рядків: **{len(df):,}**")
+st.info("База даних успішно підключена та оптимізована.")
 
-st.markdown("### Введіть дані для пошуку:")
-col1, col2, col3 = st.columns(3)
+# Створюємо дві колонки: ліва для пошуку, права для історії
+main_col, history_col = st.columns([3, 1])
 
-with col1:
-    search_pib = st.text_input("Прізвище, імя, по батькові в/с")
-with col2:
+with main_col:
+    st.markdown("### Введіть дані для пошуку:")
+    search_pib = st.text_input(
+        "Введіть ПІБ (можна частково, будь-який регістр):"
+    )
     search_dr = st.text_input("Дата народження (напр. 25.12.1985):")
-with col3:
-    search_ipn = st.text_input("РНОКПП (частина або повністю):")
+    search_ipn = st.text_input("РНОКПП (ІПН повністю або частина):")
 
-if st.button("🚀 Запустити пошук", type="primary"):
-    res = df.copy()
+    if st.button("🚀 Запустити пошук", type="primary"):
+        if not (search_pib.strip() or search_dr.strip() or search_ipn.strip()):
+            st.warning("Будь ласка, заповніть хоча б одне поле для пошуку.")
+        else:
+            with st.spinner("Проводиться швидкий пошук у базі даних..."):
+                res = search_in_chunks(search_pib, search_dr, search_ipn)
 
-    # Фільтр ПІБ
-    if search_pib.strip():
-        norm_query = normalize_string(search_pib)
-        res = res[
-            res["ПІБ"].apply(
-                lambda val: "" if val == "—" else normalize_string(val)
-            ).str.contains(norm_query)
-        ]
+            st.subheader(f"📊 Знайдено збігів: {len(res)}")
+            if len(res) > 0:
+                st.dataframe(res, use_container_width=True)
+            else:
+                st.warning("Нічого не знайдено за вашим запитом.")
 
-    # Фільтр Дата народження
-    if search_dr.strip():
-        norm_query = normalize_string(search_dr)
-        res = res[
-            res["Дата народження"]
-            .apply(lambda val: "" if val == "—" else normalize_string(val))
-            .str.contains(norm_query)
-        ]
-
-    # Фільтр ІПН
-    if search_ipn.strip():
-        norm_query = normalize_string(search_ipn)
-        res = res[
-            res["ІПН"]
-            .apply(lambda val: "" if val == "—" else normalize_string(val))
-            .str.contains(norm_query)
-        ]
-
-    # Результати
-    st.subheader(f"📊 Знайдено збігів: {len(res)}")
-    if len(res) > 0:
-        st.dataframe(res, use_container_width=True)
+with history_col:
+    st.markdown("### 🕒 Історія пошуку:")
+    if st.session_state["search_history"]:
+        # Показуємо останні пошуки зверху списку
+        for item in reversed(st.session_state["search_history"]):
+            st.write(f"• {item}")
+        if st.button("Очистити історію"):
+            st.session_state["search_history"] = []
+            st.rerun()
     else:
-        st.warning("Нічого не знайдено за вашим запитом.")
+        st.write("*Історія порожня*")
