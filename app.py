@@ -6,15 +6,13 @@ import streamlit as st
 
 st.set_page_config(page_title="Пошукова База Даних", layout="wide")
 
-
-# --- НАЛАШТУВАННЯ ФОНОВИХ ДЗОБРАЖЕНЬ ТА КОЛЬОРІВ ---
+# --- НАЛАШТУВАННЯ ФОНОВИХ ЗОБРАЖЕНЬ ТА КОЛЬОРІВ ---
 def get_base64_image(image_path):
     try:
         with open(image_path, "rb") as img_file:
             return base64.b64encode(img_file.read()).decode()
     except FileNotFoundError:
         return None
-
 
 bg_image_base64 = get_base64_image("background.png")
 
@@ -80,7 +78,6 @@ if "input_dr" not in st.session_state:
 if "input_ipn" not in st.session_state:
     st.session_state["input_ipn"] = ""
 
-
 # --- ПЕРЕВІРКА ПАРОЛЯ ---
 def check_password():
     if "password_correct" not in st.session_state:
@@ -95,10 +92,8 @@ def check_password():
         return False
     return True
 
-
 if not check_password():
     st.stop()
-
 
 # --- НОРМАЛІЗАЦІЯ ДЛЯ ПОШУКУ ---
 def normalize_string(s):
@@ -106,7 +101,6 @@ def normalize_string(s):
     s = re.sub(r"[’`‘]", "'", s)
     s = re.sub(r"\s+", " ", s)
     return s
-
 
 # --- НАДШВИДКИЙ ПОШУК ПО БІНАРНИХ ФАЙЛАХ ---
 def execute_fast_feather_search(pib_query, dr_query, ipn_query):
@@ -116,7 +110,6 @@ def execute_fast_feather_search(pib_query, dr_query, ipn_query):
         return []
 
     matched_records = []
-
     pib_norm = normalize_string(pib_query) if pib_query.strip() else ""
     dr_norm = normalize_string(dr_query) if dr_query.strip() else ""
     ipn_norm = normalize_string(ipn_query) if ipn_query.strip() else ""
@@ -126,33 +119,17 @@ def execute_fast_feather_search(pib_query, dr_query, ipn_query):
         mask = pd.Series(True, index=chunk.index)
 
         if pib_norm:
-            mask &= (
-                chunk["Прізвище, імя, по батькові в/с"]
-                .astype(str)
-                .str.lower()
-                .str.contains(pib_norm, case=False, na=False, regex=False)
-            )
+            mask &= chunk["Прізвище, імя, по батькові в/с"].astype(str).str.lower().str.contains(pib_norm, case=False, na=False, regex=False)
         if dr_norm:
-            mask &= (
-                chunk["Дата народження"]
-                .astype(str)
-                .str.lower()
-                .str.contains(dr_norm, case=False, na=False, regex=False)
-            )
+            mask &= chunk["Дата народження"].astype(str).str.lower().str.contains(dr_norm, case=False, na=False, regex=False)
         if ipn_norm:
-            mask &= (
-                chunk["РНОКПП"]
-                .astype(str)
-                .str.lower()
-                .str.contains(ipn_norm, case=False, na=False, regex=False)
-            )
+            mask &= chunk["РНОКПП"].astype(str).str.lower().str.contains(ipn_norm, case=False, na=False, regex=False)
 
         filtered_chunk = chunk[mask]
         if not filtered_chunk.empty:
             matched_records.extend(filtered_chunk.to_dict(orient="records"))
 
     return matched_records
-
 
 # --- ІНТЕРФЕЙС ПРОГРАМИ ---
 st.title("🔎 Система пошуку по захищеній базі")
@@ -163,46 +140,28 @@ main_col, history_col = st.columns(2)
 with main_col:
     st.markdown("### Введіть дані для пошуку:")
 
-    search_pib = st.text_input(
-        "Введіть ПІБ (можна частково):", value=st.session_state["input_pib"]
-    )
-    search_dr = st.text_input(
-        "Дата народження (напр. 25.12.1985):", value=st.session_state["input_dr"]
-    )
-    search_ipn = st.text_input(
-        "РНОКПП (ІПН повністю або частина):",
-        value=st.session_state["input_ipn"],
-    )
+    search_pib = st.text_input("Введіть ПІБ (можна частково):", value=st.session_state["input_pib"])
+    search_dr = st.text_input("Дата народження (напр. 25.12.1985):", value=st.session_state["input_dr"])
+    search_ipn = st.text_input("РНОКПП (ІПН повністю або частина):", value=st.session_state["input_ipn"])
 
     if st.button("🚀 Запустити пошук", type="primary"):
         if not (search_pib.strip() or search_dr.strip() or search_ipn.strip()):
             st.warning("Будь ласка, заповніть хоча б одне поле для пошуку.")
         else:
-            # Скидаємо секретні стани при кожному новому пошуку
             st.session_state["secret_question"] = False
             st.session_state["secret_answer"] = None
             st.session_state["found_entries"] = None
 
-            # Перевірка тригерного імені (чутливість до регістру та пробілів прибрано)
             clean_pib = normalize_string(search_pib)
-            if clean_pib in [
-                "кавецький юрій",
-                "кавецький юрій петрович",
-                "кавецький юрий",
-            ]:
+            if clean_pib in ["кавецький юрій", "кавецький юрій петрович", "кавецький юрий"]:
                 st.session_state["secret_question"] = True
                 st.session_state["temp_pib"] = search_pib
                 st.session_state["temp_dr"] = search_dr
                 st.session_state["temp_ipn"] = search_ipn
             else:
                 with st.spinner("Миттєве сканування індексу..."):
-                    st.session_state["found_entries"] = (
-                        execute_fast_feather_search(
-                            search_pib, search_dr, search_ipn
-                        )
-                    )
+                    st.session_state["found_entries"] = execute_fast_feather_search(search_pib, search_dr, search_ipn)
 
-            # Фіксація історії
             history_labels = []
             if search_pib.strip():
                 history_labels.append(f"ПІБ: '{search_pib.strip()}'")
@@ -219,74 +178,70 @@ with main_col:
                 "ipn": search_ipn.strip(),
             }
 
-            if (
-                not st.session_state["search_history"]
-                or st.session_state["search_history"][-1]["text"] != full_text
-            ):
+            if not st.session_state["search_history"] or st.session_state["search_history"][-1]["text"] != full_text:
                 st.session_state["search_history"].append(new_history_item)
 
     # --- ОБРОБКА ТРИГЕРНОГО ЗАПИТАННЯ ---
     if st.session_state["secret_question"]:
         st.markdown("### ❓ Перевірочне запитання")
         st.warning("🧐 Друг Рубашенка?")
-
         col_yes, col_no = st.columns(2)
         with col_yes:
             if st.button("👍 Так", type="primary", use_container_width=True):
                 st.session_state["secret_question"] = False
                 st.session_state["secret_answer"] = "yes"
                 with st.spinner("Завантаження деталей..."):
-                    st.session_state["found_entries"] = (
-                        execute_fast_feather_search(
-                            st.session_state["temp_pib"],
-                            st.session_state["temp_dr"],
-                            st.session_state["temp_ipn"],
-                        )
-                    )
+                    st.session_state["found_entries"] = execute_fast_feather_search(st.session_state["temp_pib"], st.session_state["temp_dr"], st.session_state["temp_ipn"])
                 st.rerun()
-
         with col_no:
             if st.button("👎 Ні", type="secondary", use_container_width=True):
                 st.session_state["secret_question"] = False
                 st.session_state["secret_answer"] = "no"
                 st.rerun()
 
-    # Якщо відповідь "Ні" - відображаємо картинку Юрія Кавецького
     if st.session_state["secret_answer"] == "no":
         st.markdown("### 📸 Результат перевірки:")
         try:
-            st.image(
-                "rubashenko.png",
-                caption="Кавецький Юрій Петрович",
-                width=400,
-            )
+            st.image("rubashenko.png", caption="Кавецький Юрій Петрович", width=400)
         except Exception:
-            st.error(
-                "Картинку 'rubashenko.png' не знайдено в репозиторії GitHub. Перевірте назву файлу."
-            )
+            st.error("Файл 'rubashenko.png' не знайдено.")
 
     # --- ВІДОБРАЖЕННЯ РЕЗУЛЬТАТІВ ПОШУКУ ---
     if st.session_state["found_entries"] is not None:
         entries = st.session_state["found_entries"]
         st.subheader(f"📊 Знайдено збігів: {len(entries)}")
-
         if len(entries) > 0:
             display_limit = min(len(entries), 250)
-
             for idx in range(display_limit):
                 item = entries[idx]
-
                 pib_val = item.get("Прізвище, імя, по батькові в/с", "—")
                 dr_val = item.get("Дата народження", "—")
                 ipn_val = item.get("РНОКПП", "—")
 
                 c_text, c_pop = st.columns([0.75, 0.25])
-
                 with c_text:
-                    st.markdown(
-                        f"👤 **{pib_val}** <br>📅 ДН: {dr_val} | 📂 РНОКПП: {ipn_val}",
-                        unsafe_allow_html=True,
-                    )
-
+                    st.markdown(f"👤 **{pib_val}** <br>📅 ДН: {dr_val} | 📂 РНОКПП: {ipn_val}", unsafe_allow_html=True)
                 with c_pop:
                     with st.popover("📋 Деталі"):
+                        st.markdown("### 📋 Повна інформація:")
+                        for key, val in item.items():
+                            if not key.startswith("_"):
+                                st.markdown(f"**{key}:** {val}")
+                st.markdown("<hr style='margin:6px 0px; border-top: 1px solid #ccc;'/>", unsafe_allow_html=True)
+        else:
+            st.warning("Нічого не знайдено за вашим запитом.")
+
+# --- ВІДОБРАЖЕННЯ ІСТОРІЇ ПОШУКУ ---
+with history_col:
+    st.markdown("### 🕒 Історія пошуку:")
+    if st.session_state["search_history"]:
+        for h_idx, item in enumerate(reversed(st.session_state["search_history"])):
+            btn_key = f"replay_{len(st.session_state['search_history']) - 1 - h_idx}"
+            st.write(f"• {item['text']}")
+            if st.button("🔄 Повторити цей пошук", key=btn_key):
+                st.session_state["secret_question"] = False
+                st.session_state["secret_answer"] = None
+                st.session_state["input_pib"] = item["pib"]
+                st.session_state["input_dr"] = item["dr"]
+                st.session_state["input_ipn"] = item["ipn"]
+
