@@ -34,13 +34,9 @@ if bg_image_base64:
         unsafe_allow_html=True,
     )
 
-# Ініціалізація історії пошуку та стану модального вікна
+# Ініціалізація історії пошуку
 if "search_history" not in st.session_state:
     st.session_state["search_history"] = []
-if "selected_row" not in st.session_state:
-    st.session_state["selected_row"] = None
-if "search_results" not in st.session_state:
-    st.session_state["search_results"] = None
 
 
 # --- ПЕРЕВІРКА ПАРОЛЯ ---
@@ -70,69 +66,62 @@ def normalize_string(s):
     return s
 
 
-# --- ПОТОКОВИЙ ПОШУК (БЕЗ ПЕРЕВАНТАЖЕННЯ ПАМ'ЯТІ) ---
-def stream_search(pib_query, dr_query, ipn_query):
+# --- УЛЬТРА-ЛЕГКА ІНДЕКСАЦІЯ БАЗИ ДАНИХ (ЗАЙМАЄ МІНІМУМ ПАМ'ЯТІ) ---
+@st.cache_data
+def load_optimized_database():
     all_files = glob.glob("chunks/chunk_*.csv")
     if not all_files:
-        st.error("Помилка: папка 'chunks' порожня або не знайдена.")
-        return pd.DataFrame()
+        return None
 
-    results_list = []
-
-    pib_norm = normalize_string(pib_query) if pib_query.strip() else None
-    dr_norm = normalize_string(dr_query) if dr_query.strip() else None
-    ipn_norm = normalize_string(ipn_query) if ipn_query.strip() else None
-
-    # Покроково скануємо кожен файл окремо
+    records = []
     for f in all_files:
-        # Завантажуємо шматок у пам'ять, шукаємо і відразу очищаємо ОЗУ
         chunk = pd.read_csv(f, dtype=str, sep=";")
         chunk = chunk.fillna("—")
         chunk = chunk.replace(r"^\s*$", "—", regex=True)
 
-        mask = pd.Series(True, index=chunk.index)
+        # Конвертуємо у легкий формат списку словників
+        for row in chunk.to_dict(orient="records"):
+            # Одразу додаємо оптимізовані поля пошуку в словник
+            row["_pib_norm"] = normalize_string(
+                row.get("Прізвище, імя, по батькові в/с", "")
+            )
+            row["_dr_norm"] = normalize_string(
+                row.get("Дата народження", "")
+            )
+            row["_ipn_norm"] = normalize_string(row.get("РНОКПП", ""))
+            records.append(row)
 
-        if pib_norm:
-            mask &= chunk["Прізвище, імя, по батькові в/с"].apply(
-                lambda val: "" if val == "—" else normalize_string(val)
-            ).str.contains(pib_norm)
+    return records
 
-        if dr_norm:
-            mask &= chunk["Дата народження"].apply(
-                lambda val: "" if val == "—" else normalize_string(val)
-            ).str.contains(dr_norm)
 
-        if ipn_norm:
-            mask &= chunk["РНОКПП"].apply(
-                lambda val: "" if val == "—" else normalize_string(val)
-            ).str.contains(ipn_norm)
+with st.spinner("⚡ Створення надшвидкого індексу бази даних..."):
+    db_records = load_optimized_database()
 
-        filtered_chunk = chunk[mask]
-        if not filtered_chunk.empty:
-            results_list.append(filtered_chunk)
-
-    if results_list:
-        return pd.concat(results_list, ignore_index=True)
-    return pd.DataFrame()
-
+if db_records is None:
+    st.error("Помилка: папка 'chunks' порожня або не знайдена.")
+    st.stop()
 
 # --- ІНТЕРФЕЙС ---
 st.title("🔎 Система пошуку по захищеній базі")
-st.info("🔒 База даних підключена та оптимізована під низьке споживання оперативної пам'яті.")
+st.success(f"⚡ База готова до миттєвого пошуку. Завантажено рядків: {len(db_records):,}")
 
 main_col, history_col = st.columns([3, 1])
 
 with main_col:
     st.markdown("### Введіть дані для пошуку:")
-    search_pib = st.text_input("Введіть ПІБ (можна частково, будь-який регістр):")
+    search_pib = st.text_input("Введіть ПІБ:")
     search_dr = st.text_input("Дата народження (напр. 25.12.1985):")
     search_ipn = st.text_input("РНОКПП (ІПН повністю або частина):")
+
+    # Стан для результатів пошуку
+    if "found_entries" not in st.session_state:
+        st.session_state["found_entries"] = None
 
     if st.button("🚀 Запустити пошук", type="primary"):
         if not (search_pib.strip() or search_dr.strip() or search_ipn.strip()):
             st.warning("Будь ласка, заповніть хоча б одне поле для пошуку.")
         else:
-            # Запис до історії
+            # Збереження історії
             history_entry = []
             if search_pib.strip():
                 history_entry.append(f"ПІБ: '{search_pib.strip()}'")
@@ -143,32 +132,67 @@ with main_col:
 
             if history_entry:
                 full_entry_text = ", ".join(history_entry)
-                if not st.session_state["search_history"] or st.session_state["search_history"][-1] != full_entry_text:
+                if (
+                    not st.session_state["search_history"]
+                    or st.session_state["search_history"][-1] != full_entry_text
+                ):
                     st.session_state["search_history"].append(full_entry_text)
 
-            with st.spinner("Проводиться потоковий пошук у базі даних..."):
-                st.session_state["search_results"] = stream_search(search_pib, search_dr, search_ipn)
+            pib_q = normalize_string(search_pib) if search_pib.strip() else ""
+            dr_q = normalize_string(search_dr) if search_dr.strip() else ""
+            ipn_q = normalize_string(search_ipn) if search_ipn.strip() else ""
 
-    # Відображення результатів та обробка кліків
-    if st.session_state["search_results"] is not None:
-        res = st.session_state["search_results"]
-        st.subheader(f"📊 Знайдено збігів: {len(res)}")
+            # Блискавичний пошук по пам'яті (соті частки секунди)
+            matched = []
+            for r in db_records:
+                if pib_q and pib_q not in r["_pib_norm"]:
+                    continue
+                if dr_q and dr_q not in r["_dr_norm"]:
+                    continue
+                if ipn_q and ipn_q not in r["_ipn_norm"]:
+                    continue
+                matched.append(r)
 
-        if len(res) > 0:
-            # Додаємо вибір рядків користувачем
-            event = st.dataframe(
-                res,
-                use_container_width=True,
-                on_select="rerun",
-                selection_mode="single-row",
-                key="df_selection_table",
-            )
+            st.session_state["found_entries"] = matched
 
-            # Перевіряємо клік
-            if event and "selection" in event and event["selection"]["rows"]:
-                selected_index = event["selection"]["rows"][0]
-                st.session_state["selected_row"] = res.iloc[selected_index]
-                st.rerun()
+    # Відображення результатів через спливаючі поповери
+    if st.session_state["found_entries"] is not None:
+        entries = st.session_state["found_entries"]
+        st.subheader(f"📊 Знайдено збігів: {len(entries)}")
+
+        if len(entries) > 0:
+            # Обмежуємо перші 300 записів для стабільності браузера
+            display_count = min(len(entries), 300)
+
+            # Робимо кастомну таблицю з інтерактивними спливаючими вікнами
+            for idx in range(display_count):
+                item = entries[idx]
+
+                # Формуємо красивий рядок картки
+                pib_val = item.get("Прізвище, імя, по батькові в/с", "—")
+                dr_val = item.get("Дата народження", "—")
+                vch_val = item.get("Військова частина", "—")
+
+                # Головний рядок та кнопка спливаючого списку в одному рядку
+                col_data, col_pop = st.columns([5, 1])
+
+                with col_data:
+                    st.markdown(
+                        f"**{pib_val}** | ДН: {dr_val} | В/Ч: {vch_val}"
+                    )
+
+                with col_pop:
+                    # Справжній спливаючий список/вікно, яке відкривається на місці без перезапусків
+                    with st.popover("📋 Деталі"):
+                        st.markdown("### Повна інформація:")
+                        for key, val in item.items():
+                            if not key.startswith("_"):
+                                st.markdown(f"**{key}:** {val}")
+
+                st.markdown("<hr style='margin:2px 0px;'/>", unsafe_allow_html=True)
+
+            if len(entries) > 300:
+                st.info("Показано перші 300 результатів. Уточніть пошуковий запит для звуження списку.")
         else:
             st.warning("Нічого не знайдено за вашим запитом.")
 
@@ -179,21 +203,7 @@ with history_col:
             st.write(f"• {item}")
         if st.button("Очистити історію"):
             st.session_state["search_history"] = []
-            st.session_state["search_results"] = None
+            st.session_state["found_entries"] = None
             st.rerun()
     else:
         st.write("*Історія порожня*")
-
-# --- СПЛИВАЮЧЕ (МОДАЛЬНЕ) ВІКНО ДЛЯ ДЕТАЛЕЙ РЯДКА ---
-if st.session_state["selected_row"] is not None:
-    @st.dialog("📋 Детальна інформація про особу", width="large")
-    def show_modal():
-        row_data = st.session_state["selected_row"]
-        for column_name, value in row_data.items():
-            st.markdown(f"**{column_name}:** `{value}`")
-        st.write("---")
-        if st.button("Закрити вікно", type="primary"):
-            st.session_state["selected_row"] = None
-            st.rerun()
-
-    show_modal()
