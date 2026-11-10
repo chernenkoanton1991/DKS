@@ -7,7 +7,7 @@ import streamlit as st
 st.set_page_config(page_title="Пошукова База Даних", layout="wide")
 
 
-# --- НАЛАШТУВАННЯ ФОНОВИХ ЗОБРАЖЕНЬ ТА КОЛЬОРІВ ---
+# --- НАЛАШТУВАННЯ ФОНОВИХ ДЗОБРАЖЕНЬ ТА КОЛЬОРІВ ---
 def get_base64_image(image_path):
     try:
         with open(image_path, "rb") as img_file:
@@ -178,31 +178,31 @@ with main_col:
         if not (search_pib.strip() or search_dr.strip() or search_ipn.strip()):
             st.warning("Будь ласка, заповніть хоча б одне поле для пошуку.")
         else:
-            # Скидаємо секретні стани при новому пошуку
+            # Скидаємо секретні стани при кожному новому пошуку
             st.session_state["secret_question"] = False
             st.session_state["secret_answer"] = None
             st.session_state["found_entries"] = None
 
-            # Перевірка на тригерне ім'я
-            clean_pib = search_pib.strip().lower()
+            # Перевірка тригерного імені (чутливість до регістру та пробілів прибрано)
+            clean_pib = normalize_string(search_pib)
             if clean_pib in [
                 "кавецький юрій",
                 "кавецький юрій петрович",
                 "кавецький юрий",
             ]:
                 st.session_state["secret_question"] = True
-                # Зберігаємо параметри пошуку, щоб виконати його після відповіді "Так"
                 st.session_state["temp_pib"] = search_pib
                 st.session_state["temp_dr"] = search_dr
                 st.session_state["temp_ipn"] = search_ipn
             else:
-                # Звичайний пошук
                 with st.spinner("Миттєве сканування індексу..."):
-                    st.session_state["found_entries"] = execute_fast_feather_search(
-                        search_pib, search_dr, search_ipn
+                    st.session_state["found_entries"] = (
+                        execute_fast_feather_search(
+                            search_pib, search_dr, search_ipn
+                        )
                     )
 
-            # Історія пошуку
+            # Фіксація історії
             history_labels = []
             if search_pib.strip():
                 history_labels.append(f"ПІБ: '{search_pib.strip()}'")
@@ -236,10 +236,12 @@ with main_col:
                 st.session_state["secret_question"] = False
                 st.session_state["secret_answer"] = "yes"
                 with st.spinner("Завантаження деталей..."):
-                    st.session_state["found_entries"] = execute_fast_feather_search(
-                        st.session_state["temp_pib"],
-                        st.session_state["temp_dr"],
-                        st.session_state["temp_ipn"],
+                    st.session_state["found_entries"] = (
+                        execute_fast_feather_search(
+                            st.session_state["temp_pib"],
+                            st.session_state["temp_dr"],
+                            st.session_state["temp_ipn"],
+                        )
                     )
                 st.rerun()
 
@@ -249,22 +251,21 @@ with main_col:
                 st.session_state["secret_answer"] = "no"
                 st.rerun()
 
-    # Якщо відповідь "Ні" - виводимо картинку
+    # Якщо відповідь "Ні" - відображаємо картинку Юрія Кавецького
     if st.session_state["secret_answer"] == "no":
         st.markdown("### 📸 Результат перевірки:")
         try:
             st.image(
                 "rubashenko.png",
                 caption="Кавецький Юрій Петрович",
-                use_container_width=False,
                 width=400,
             )
         except Exception:
             st.error(
-                "Картинку 'rubashenko.png' не знайдено в папці проєкту. Будь ласка, завантажте її."
+                "Картинку 'rubashenko.png' не знайдено в репозиторії GitHub. Перевірте назву файлу."
             )
 
-    # --- ВІДОБРАЖЕННЯ РЕЗУЛЬТАТІВ ---
+    # --- ВІДОБРАЖЕННЯ РЕЗУЛЬТАТІВ ПОШУКУ ---
     if st.session_state["found_entries"] is not None:
         entries = st.session_state["found_entries"]
         st.subheader(f"📊 Знайдено збігів: {len(entries)}")
