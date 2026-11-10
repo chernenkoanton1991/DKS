@@ -7,7 +7,7 @@ import streamlit as st
 st.set_page_config(page_title="Пошукова База Даних", layout="wide")
 
 
-# --- НАЛАШТУВАННЯ ФОНОВОГО ЗОБРАЖЕННЯ ТА КОЛЬОРУ ТЕКСТУ ДЛЯ МОБІЛЬНИХ ---
+# --- НАЛАШТУВАННЯ ФОНОВОГО ЗОБРАЖЕННЯ ТА НАДЖОРСТКОГО СТИЛЮ ДЛЯ ТЕЛЕФОНІВ ---
 def get_base64_image(image_path):
     try:
         with open(image_path, "rb") as img_file:
@@ -18,22 +18,44 @@ def get_base64_image(image_path):
 
 bg_image_base64 = get_base64_image("background.png")
 
-# Примусово фіксуємо темний колір тексту для підписів полів (labels) на телефонах
+# Застосовуємо комплексний CSS, який повністю перевизначає кольори для темної теми смартфонів
 st.markdown(
     """
     <style>
-    /* Робимо підписи полів введення завжди чорними */
-    label, .stWidgetLabel p, stMarkdownInsideButton p {
+    /* 1. Робимо всі підписи та заголовки на сторінці насичено чорними */
+    label, .stWidgetLabel p, h1, h2, h3, h4, h5, h6, .stHeading p {
+        color: #000000 !important;
+        font-weight: 700 !important;
+    }
+    
+    /* 2. Текст звичайних абзаців та списків на світлому тлі */
+    .stMarkdown p, .stText p {
         color: #111111 !important;
+    }
+    
+    /* 3. РЕМОНТ СПЛИВАЮЧОГО ВІКНА (POPOVER) ДЛЯ ТЕЛЕФОНІВ */
+    /* Примусово робимо фон спливаючого вікна світло-сірим/білим, а весь текст всередині нього - чорним */
+    div[data-testid="stPopoverBody"], div[data-testid="stPopoverBody"] *, [data-testid="stPopoverBody"] p, [data-testid="stPopoverBody"] span {
+        background-color: #fcfcfc !important;
+        color: #000000 !important;
+        font-weight: 500 !important;
+    }
+    
+    /* Окремо виділяємо жирні назви параметрів всередині деталей */
+    div[data-testid="stPopoverBody"] strong {
+        color: #000000 !important;
+        font-weight: 700 !important;
+    }
+
+    /* 4. РЕМОНТ СИНЬОЇ ПЛАШКИ ЗВЕРХУ (st.info) */
+    /* Міняємо темний колір на світло-блакитний з чітким темно-синім текстом */
+    div[data-testid="stAlert"] {
+        background-color: #e3f2fd !important;
+        border: 1px solid #90caf9 !important;
+    }
+    div[data-testid="stAlert"] p, div[data-testid="stAlert"] * {
+        color: #0d47a1 !important;
         font-weight: 600 !important;
-    }
-    /* Заголовки */
-    h1, h2, h3, h4, h5, h6, .stHeading p {
-        color: #111111 !important;
-    }
-    /* Текст звичайних написів та інформаційного блоку */
-    .stMarkdown p, .stText p, .stAlert p {
-        color: #222222 !important;
     }
     </style>
     """,
@@ -148,8 +170,7 @@ def execute_fast_feather_search(pib_query, dr_query, ipn_query):
 st.title("🔎 Система пошуку по захищеній базі")
 st.info("⚡ База даних переведена на ультра-швидкий бінарний індекс.")
 
-# Використовуємо адаптивні колонки, які на мобільних пристроях автоматично переносяться одна під одну
-main_col, history_col = st.columns([1, 1])
+main_col, history_col = st.columns()
 
 with main_col:
     st.markdown("### Введіть дані для пошуку:")
@@ -211,20 +232,20 @@ with main_col:
                 dr_val = item.get("Дата народження", "—")
                 ipn_val = item.get("РНОКПП", "—")
 
-                # Оптимальне співвідношення для мобільних екранів
                 c_text, c_pop = st.columns([0.75, 0.25])
 
                 with c_text:
                     st.markdown(
                         f"👤 **{pib_val}** <br>📅 ДН: {dr_val} | 📂 РНОКПП: {ipn_val}",
-                        unsafe_allow_html=True
+                        unsafe_allow_html=True,
                     )
 
                 with c_pop:
                     with st.popover("📋 Деталі"):
                         st.markdown("### 📋 Повна інформація:")
                         for key, val in item.items():
-                            st.markdown(f"**{key}:** {val}")
+                            if not key.startswith("_"):
+                                st.markdown(f"**{key}:** {val}")
 
                 st.markdown(
                     "<hr style='margin:6px 0px; border-top: 1px solid #ccc;'/>",
@@ -273,4 +294,3 @@ with history_col:
             st.session_state["input_ipn"] = ""
             st.rerun()
     else:
-        st.write("*Історія порожня*")
