@@ -2,38 +2,28 @@ import os
 import re
 import pandas as pd
 
-# Назва вашого початкового великого файлу (повинен лежати в цій же папці)
 input_file = "database.csv"
-# Кількість рядків в одному файлі шматка (~30-40 МБ на файл)
-chunk_size = 50000
+chunk_size = 70000  # Оптимальний розмір для швидкого читання
 
-# Створюємо папку chunks, якщо її немає
 if not os.path.exists("chunks"):
     os.makedirs("chunks")
 
 
 def clean_text(text):
-    """Очищає текст для надійного порівняння: видаляє зайві пробіли на початку,
-
-    всередині та в кінці, а також стандартизує всі види апострофів.
-    """
     if pd.isna(text):
         return ""
     text = str(text).strip()
-    # Замінюємо всі варіації апострофів на один класичний стандартний '
     text = re.sub(r"[’`‘]", "'", text)
-    # Замінюємо подвійні/множинні пробіли всередині на один звичайний
     text = re.sub(r"\s+", " ", text)
     return text
 
 
-print("🚀 Почалося розбиття та оптимізація великого файлу...")
+print("🚀 Почалося швидкісне перепакування файлу у формат Feather...")
 
-# Зчитуємо великий CSV-файл частинами з розподільником ';'
+# Зчитуємо початковий CSV за роздільником ';'
 for i, chunk in enumerate(
     pd.read_csv(input_file, chunksize=chunk_size, dtype=str, sep=";")
 ):
-    # Очищаємо основні текстові колонки пошуку перед їх збереженням у шматки
     target_columns = [
         "Прізвище, імя, по батькові в/с",
         "Дата народження",
@@ -44,13 +34,17 @@ for i, chunk in enumerate(
         if col in chunk.columns:
             chunk[col] = chunk[col].apply(clean_text)
 
-    chunk_filename = f"chunks/chunk_{i}.csv"
+    # Заповнюємо пусті клітинки дефісом заздалегідь, щоб не гаяти час на сайті
+    chunk = chunk.fillna("—")
+    chunk = chunk.replace(r"^\s*$", "—", regex=True)
 
-    # Зберігаємо готові дрібні файли також через роздільник ';'
-    chunk.to_csv(chunk_filename, index=False, sep=";")
-    print(f"✅ Збережено шматок: {chunk_filename}")
+    # Зберігаємо у надшвидкому бінарному форматі .feather
+    chunk_filename = f"chunks/chunk_{i}.feather"
+    # Скидаємо індекси, бо feather вимагає стандартні індекси
+    chunk = chunk.reset_index(drop=True)
+    chunk.to_feather(chunk_filename)
+    print(f"✅ Оптимізовано та збережено: {chunk_filename}")
 
 print(
-    "\n🎉 Успішно! Великий файл розбито та оптимізовано під нові назви стовпчиків."
+    "\n🎉 Успішно! Старі файли .csv з папки chunks можна видалити, залишивши тільки нові файли .feather"
 )
-print("Папка 'chunks' готова для відправки на GitHub через GitHub Desktop.")

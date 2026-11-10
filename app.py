@@ -34,7 +34,6 @@ if bg_image_base64:
         unsafe_allow_html=True,
     )
 
-# Ініціалізація історії пошуку та результатів у сесії
 if "search_history" not in st.session_state:
     st.session_state["search_history"] = []
 if "found_entries" not in st.session_state:
@@ -68,11 +67,14 @@ def normalize_string(s):
     return s
 
 
-# --- ШВИДКИЙ ПОТОКОВИЙ ПОШУК (БЕЗ ПЕРЕВАНТАЖЕННЯ ПАМ'ЯТІ) ---
-def execute_fast_search(pib_query, dr_query, ipn_query):
-    all_files = glob.glob("chunks/chunk_*.csv")
+# --- НАДШВИДКИЙ ПОШУК ПО БІНАРНИХ ФАЙЛАХ ---
+def execute_fast_feather_search(pib_query, dr_query, ipn_query):
+    # Шукаємо бінарні файли
+    all_files = glob.glob("chunks/chunk_*.feather")
     if not all_files:
-        st.error("Помилка: папка 'chunks' порожня або не знайдена.")
+        st.error(
+            "Помилка: бінарні файли не знайдені. Перевірте, чи завантажили ви файли .feather"
+        )
         return []
 
     matched_records = []
@@ -81,38 +83,47 @@ def execute_fast_search(pib_query, dr_query, ipn_query):
     dr_norm = normalize_string(dr_query) if dr_query.strip() else ""
     ipn_norm = normalize_string(ipn_query) if ipn_query.strip() else ""
 
-    # Почергово скануємо кожен невеликий файл
     for f in all_files:
-        chunk = pd.read_csv(f, dtype=str, sep=";")
-        chunk = chunk.fillna("—")
-        chunk = chunk.replace(r"^\s*$", "—", regex=True)
+        # Читання бінарного feather відбувається майже миттєво
+        chunk = pd.read_feather(f)
 
-        # Конвертуємо поточний шматок у список словників для швидкого перебору в ОЗУ
-        for row in chunk.to_dict(orient="records"):
-            if pib_norm and pib_norm not in normalize_string(
-                row.get("Прізвище, імя, по батькові в/с", "")
-            ):
-                continue
-            if dr_norm and dr_norm not in normalize_string(
-                row.get("Дата народження", "")
-            ):
-                continue
-            if ipn_norm and ipn_norm not in normalize_string(
-                row.get("РНОКПП", "")
-            ):
-                continue
-            matched_records.append(row)
+        # Швидка векторна фільтрація
+        mask = pd.Series(True, index=chunk.index)
+
+        if pib_norm:
+            mask &= (
+                chunk["Прізвище, імя, по батькові в/с"]
+                .astype(str)
+                .str.lower()
+                .str.contains(pib_norm, regex=False)
+            )
+        if dr_norm:
+            mask &= (
+                chunk["Дата народження"]
+                .astype(str)
+                .str.lower()
+                .str.contains(dr_norm, regex=False)
+            )
+        if ipn_norm:
+            mask &= (
+                chunk["РНОКПП"]
+                .astype(str)
+                .str.lower()
+                .str.contains(ipn_norm, regex=False)
+            )
+
+        filtered_chunk = chunk[mask]
+        if not filtered_chunk.empty:
+            matched_records.extend(filtered_chunk.to_dict(orient="records"))
 
     return matched_records
 
 
-# --- ІНТЕРФЕЙС ПРОГРАМИ ---
+# --- ІНТЕРФЕЙС ---
 st.title("🔎 Система пошуку по захищеній базі")
-st.info(
-    "🔒 Система оптимізована. База даних готова до безпечної та стабільної роботи."
-)
+st.info("⚡ База даних переведена на ультра-швидкий бінарний індекс.")
 
-main_col, history_col = st.columns([3, 1])
+main_col, history_col = st.columns()
 
 with main_col:
     st.markdown("### Введіть дані для пошуку:")
@@ -124,7 +135,6 @@ with main_col:
         if not (search_pib.strip() or search_dr.strip() or search_ipn.strip()):
             st.warning("Будь ласка, заповніть хоча б одне поле для пошуку.")
         else:
-            # Фіксація історії
             history_entry = []
             if search_pib.strip():
                 history_entry.append(f"ПІБ: '{search_pib.strip()}'")
@@ -141,12 +151,11 @@ with main_col:
                 ):
                     st.session_state["search_history"].append(full_entry_text)
 
-            with st.spinner("Проводиться безпечний пошук у базі..."):
-                st.session_state["found_entries"] = execute_fast_search(
+            with st.spinner("Миттєве сканування індексу..."):
+                st.session_state["found_entries"] = execute_fast_feather_search(
                     search_pib, search_dr, search_ipn
                 )
 
-    # ВІД ОБРАЖЕННЯ РЕЗУЛЬТАТІВ ЗІ СПЛИВАЮЧИМИ КАРТКАМИ ДЕТАЛЕЙ
     if st.session_state["found_entries"] is not None:
         entries = st.session_state["found_entries"]
         st.subheader(f"📊 Знайдено збігів: {len(entries)}")
@@ -154,7 +163,6 @@ with main_col:
         if len(entries) > 0:
             display_limit = min(len(entries), 250)
 
-            # Будуємо список карток
             for idx in range(display_limit):
                 item = entries[idx]
 
@@ -162,7 +170,6 @@ with main_col:
                 dr_val = item.get("Дата народження", "—")
                 ipn_val = item.get("РНОКПП", "—")
 
-                # Створюємо зручний горизонтальний рядок з інтерактивним поповером
                 c_text, c_pop = st.columns([4, 1])
 
                 with c_text:
@@ -171,7 +178,6 @@ with main_col:
                     )
 
                 with c_pop:
-                    # Справжня спливаюча картка деталей, яка не перезавантажує інтерфейс
                     with st.popover("📋 Деталі"):
                         st.markdown("### 📋 Повна інформація:")
                         for key, val in item.items():
@@ -184,7 +190,7 @@ with main_col:
 
             if len(entries) > 250:
                 st.info(
-                    "Показано перші 250 результатів. Уточніть пошуковий запит для звуження списку."
+                    "Показано перші 250 результатів. Уточніть пошуковий запит."
                 )
         else:
             st.warning("Нічого не знайдено за вашим запитом.")
