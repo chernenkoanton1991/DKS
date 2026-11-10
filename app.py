@@ -69,7 +69,6 @@ def normalize_string(s):
 
 # --- НАДШВИДКИЙ ПОШУК ПО БІНАРНИХ ФАЙЛАХ ---
 def execute_fast_feather_search(pib_query, dr_query, ipn_query):
-    # Шукаємо бінарні файли
     all_files = glob.glob("chunks/chunk_*.feather")
     if not all_files:
         st.error(
@@ -84,10 +83,9 @@ def execute_fast_feather_search(pib_query, dr_query, ipn_query):
     ipn_norm = normalize_string(ipn_query) if ipn_query.strip() else ""
 
     for f in all_files:
-        # Читання бінарного feather відбувається майже миттєво
         chunk = pd.read_feather(f)
 
-        # Швидка векторна фільтрація
+        # Оптимізована швидкісна векторна фільтрація
         mask = pd.Series(True, index=chunk.index)
 
         if pib_norm:
@@ -95,21 +93,21 @@ def execute_fast_feather_search(pib_query, dr_query, ipn_query):
                 chunk["Прізвище, імя, по батькові в/с"]
                 .astype(str)
                 .str.lower()
-                .str.contains(pib_norm, regex=False)
+                .str.contains(pib_norm, case=False, na=False, regex=False)
             )
         if dr_norm:
             mask &= (
                 chunk["Дата народження"]
                 .astype(str)
                 .str.lower()
-                .str.contains(dr_norm, regex=False)
+                .str.contains(dr_norm, case=False, na=False, regex=False)
             )
         if ipn_norm:
             mask &= (
                 chunk["РНОКПП"]
                 .astype(str)
                 .str.lower()
-                .str.contains(ipn_norm, regex=False)
+                .str.contains(ipn_norm, case=False, na=False, regex=False)
             )
 
         filtered_chunk = chunk[mask]
@@ -123,7 +121,8 @@ def execute_fast_feather_search(pib_query, dr_query, ipn_query):
 st.title("🔎 Система пошуку по захищеній базі")
 st.info("⚡ База даних переведена на ультра-швидкий бінарний індекс.")
 
-main_col, history_col = st.columns()
+# ВИПРАВЛЕНО: Додано число 2 в дужки, щоб розділити інтерфейс на 2 стовпчики
+main_col, history_col = st.columns(2)
 
 with main_col:
     st.markdown("### Введіть дані для пошуку:")
@@ -170,6 +169,7 @@ with main_col:
                 dr_val = item.get("Дата народження", "—")
                 ipn_val = item.get("РНОКПП", "—")
 
+                # Розподіл елементів усередині кожного рядка результату
                 c_text, c_pop = st.columns([4, 1])
 
                 with c_text:
