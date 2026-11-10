@@ -34,10 +34,19 @@ if bg_image_base64:
         unsafe_allow_html=True,
     )
 
+# Ініціалізація станів у сесії
 if "search_history" not in st.session_state:
     st.session_state["search_history"] = []
 if "found_entries" not in st.session_state:
     st.session_state["found_entries"] = None
+
+# Тимчасові змінні для заповнення полів введення (потрібні для повтору з історії)
+if "input_pib" not in st.session_state:
+    st.session_state["input_pib"] = ""
+if "input_dr" not in st.session_state:
+    st.session_state["input_dr"] = ""
+if "input_ipn" not in st.session_state:
+    st.session_state["input_ipn"] = ""
 
 
 # --- ПЕРЕВІРКА ПАРОЛЯ ---
@@ -71,9 +80,7 @@ def normalize_string(s):
 def execute_fast_feather_search(pib_query, dr_query, ipn_query):
     all_files = glob.glob("chunks/chunk_*.feather")
     if not all_files:
-        st.error(
-            "Помилка: бінарні файли не знайдені. Перевірте, чи завантажили ви файли .feather"
-        )
+        st.error("Помилка: бінарні файли не знайдені.")
         return []
 
     matched_records = []
@@ -84,8 +91,6 @@ def execute_fast_feather_search(pib_query, dr_query, ipn_query):
 
     for f in all_files:
         chunk = pd.read_feather(f)
-
-        # Оптимізована швидкісна векторна фільтрація
         mask = pd.Series(True, index=chunk.index)
 
         if pib_norm:
@@ -121,40 +126,60 @@ def execute_fast_feather_search(pib_query, dr_query, ipn_query):
 st.title("🔎 Система пошуку по захищеній базі")
 st.info("⚡ База даних переведена на ультра-швидкий бінарний індекс.")
 
-# ВИПРАВЛЕНО: Додано число 2 в дужки, щоб розділити інтерфейс на 2 стовпчики
 main_col, history_col = st.columns(2)
 
 with main_col:
     st.markdown("### Введіть дані для пошуку:")
-    search_pib = st.text_input("Введіть ПІБ (можна частково):")
-    search_dr = st.text_input("Дата народження (напр. 25.12.1985):")
-    search_ipn = st.text_input("РНОКПП (ІПН повністю або частина):")
+
+    # Поля введення тепер прив'язані до значень у session_state
+    search_pib = st.text_input(
+        "Введіть ПІБ (можна частково):", value=st.session_state["input_pib"]
+    )
+    search_dr = st.text_input(
+        "Дата народження (напр. 25.12.1985):", value=st.session_state["input_dr"]
+    )
+    search_ipn = st.text_input(
+        "РНОКПП (ІПН повністю або частина):",
+        value=st.session_state["input_ipn"],
+    )
 
     if st.button("🚀 Запустити пошук", type="primary"):
         if not (search_pib.strip() or search_dr.strip() or search_ipn.strip()):
             st.warning("Будь ласка, заповніть хоча б одне поле для пошуку.")
         else:
-            history_entry = []
+            # Створюємо структурований запис для історії
+            history_labels = []
             if search_pib.strip():
-                history_entry.append(f"ПІБ: '{search_pib.strip()}'")
+                history_labels.append(f"ПІБ: '{search_pib.strip()}'")
             if search_dr.strip():
-                history_entry.append(f"ДН: '{search_dr.strip()}'")
+                history_labels.append(f"ДН: '{search_dr.strip()}'")
             if search_ipn.strip():
-                history_entry.append(f"РНОКПП: '{search_ipn.strip()}'")
+                history_entry_ipn = search_ipn.strip()
+                history_labels.append(f"РНОКПП: '{history_entry_ipn}'")
 
-            if history_entry:
-                full_entry_text = ", ".join(history_entry)
-                if (
-                    not st.session_state["search_history"]
-                    or st.session_state["search_history"][-1] != full_entry_text
-                ):
-                    st.session_state["search_history"].append(full_entry_text)
+            full_text = ", ".join(history_labels)
+
+            # Об'єкт історії, що містить і текст, і збережені параметри для повтору
+            new_history_item = {
+                "text": full_text,
+                "pib": search_pib.strip(),
+                "dr": search_dr.strip(),
+                "ipn": search_ipn.strip(),
+            }
+
+            # Перевіряємо дублікати
+            if (
+                not st.session_state["search_history"]
+                or st.session_state["search_history"][-1]["text"] != full_text
+            ):
+                st.session_state["search_history"].append(new_history_item)
 
             with st.spinner("Миттєве сканування індексу..."):
                 st.session_state["found_entries"] = execute_fast_feather_search(
                     search_pib, search_dr, search_ipn
                 )
 
+    # ВІДОБРАЖЕННЯ РЕЗУЛЬТАТІВ ПОШУКУ
     if st.session_state["found_entries"] is not None:
         entries = st.session_state["found_entries"]
         st.subheader(f"📊 Знайдено збігів: {len(entries)}")
@@ -169,8 +194,7 @@ with main_col:
                 dr_val = item.get("Дата народження", "—")
                 ipn_val = item.get("РНОКПП", "—")
 
-                # Розподіл елементів усередині кожного рядка результату
-                c_text, c_pop = st.columns([4, 1])
+                c_text, c_pop = st.columns([0.8, 0.2])
 
                 with c_text:
                     st.markdown(
@@ -195,14 +219,44 @@ with main_col:
         else:
             st.warning("Нічого не знайдено за вашим запитом.")
 
+
+# --- ІСТОРІЯ ПОШУКУ З ФУНКЦІЄЮ ПОВТОРУ ---
 with history_col:
     st.markdown("### 🕒 Історія пошуку:")
     if st.session_state["search_history"]:
-        for item in reversed(st.session_state["search_history"]):
-            st.write(f"• {item}")
+        # Показуємо запити від нових до старих
+        for h_idx, item in enumerate(
+            reversed(st.session_state["search_history"])
+        ):
+            # Створюємо унікальний ключ для кожної кнопки в циклі
+            btn_key = f"replay_{len(st.session_state['search_history']) - 1 - h_idx}"
+
+            st.write(f"• {item['text']}")
+
+            # Кнопка для автоматичного перезапуску саме цього пошуку
+            if st.button("🔄 Повторити пошук", key=btn_key, size="small"):
+                # 1. Записуємо старі дані в поля введення
+                st.session_state["input_pib"] = item["pib"]
+                st.session_state["input_dr"] = item["dr"]
+                st.session_state["input_ipn"] = item["ipn"]
+
+                # 2. Миттєво запускаємо пошук за цими параметрами
+                st.session_state["found_entries"] = execute_fast_feather_search(
+                    item["pib"], item["dr"], item["ipn"]
+                )
+                st.rerun()
+
+            st.markdown(
+                "<div style='margin-bottom:10px;'></div>",
+                unsafe_allow_html=True,
+            )
+
         if st.button("Очистити історію"):
             st.session_state["search_history"] = []
             st.session_state["found_entries"] = None
+            st.session_state["input_pib"] = ""
+            st.session_state["input_dr"] = ""
+            st.session_state["input_ipn"] = ""
             st.rerun()
     else:
         st.write("*Історія порожня*")
