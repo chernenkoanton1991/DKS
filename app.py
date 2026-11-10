@@ -7,7 +7,7 @@ import streamlit as st
 st.set_page_config(page_title="Пошукова База Даних", layout="wide")
 
 
-# --- НАЛАШТУВАННЯ ФОНОВОГО ЗОБРАЖЕННЯ ТА НАДЖОРСТКОГО СТИЛЮ ДЛЯ ТЕЛЕФОНІВ ---
+# --- НАЛАШТУВАННЯ ФОНОВОГО ЗОБРАЖЕННЯ ТА ЖОРСТКИХ СТИЛІВ КОЛЬОРУ ---
 def get_base64_image(image_path):
     try:
         with open(image_path, "rb") as img_file:
@@ -18,37 +18,30 @@ def get_base64_image(image_path):
 
 bg_image_base64 = get_base64_image("background.png")
 
-# Застосовуємо комплексний CSS, який повністю перевизначає кольори для темної теми смартфонів
+# Примусовий CSS для ідеального відображення як на ПК, так і на мобільних телефонах
 st.markdown(
     """
     <style>
-    /* 1. Робимо всі підписи та заголовки на сторінці насичено чорними */
-    label, .stWidgetLabel p, h1, h2, h3, h4, h5, h6, .stHeading p {
+    /* 1. Робимо абсолютно всі заголовки та підписи комірок чорними та жирними */
+    label, .stWidgetLabel p, h1, h2, h3, h4, h5, h6, .stHeading p, .stMarkdown strong {
         color: #000000 !important;
         font-weight: 700 !important;
     }
     
-    /* 2. Текст звичайних абзаців та списків на світлому тлі */
-    .stMarkdown p, .stText p {
+    /* 2. Звичайний текст результатів та списків */
+    .stMarkdown p, .stText p, li {
         color: #111111 !important;
     }
     
-    /* 3. РЕМОНТ СПЛИВАЮЧОГО ВІКНА (POPOVER) ДЛЯ ТЕЛЕФОНІВ */
-    /* Примусово робимо фон спливаючого вікна світло-сірим/білим, а весь текст всередині нього - чорним */
+    /* 3. ОЧИЩЕННЯ ТЕМНОГО РЕЖИМУ ДЛЯ СПЛИВАЮЧОГО ВІКНА (POPOVER) */
+    /* Примусово фіксуємо світлий фон вікна деталей та чорний колір літер */
     div[data-testid="stPopoverBody"], div[data-testid="stPopoverBody"] *, [data-testid="stPopoverBody"] p, [data-testid="stPopoverBody"] span {
         background-color: #fcfcfc !important;
         color: #000000 !important;
         font-weight: 500 !important;
     }
     
-    /* Окремо виділяємо жирні назви параметрів всередині деталей */
-    div[data-testid="stPopoverBody"] strong {
-        color: #000000 !important;
-        font-weight: 700 !important;
-    }
-
-    /* 4. РЕМОНТ СИНЬОЇ ПЛАШКИ ЗВЕРХУ (st.info) */
-    /* Міняємо темний колір на світло-блакитний з чітким темно-синім текстом */
+    /* 4. ОЧИЩЕННЯ ВЕРХНЬОГО ІНФОРМАЦІЙНОГО БЛОКУ (st.info) */
     div[data-testid="stAlert"] {
         background-color: #e3f2fd !important;
         border: 1px solid #90caf9 !important;
@@ -166,11 +159,11 @@ def execute_fast_feather_search(pib_query, dr_query, ipn_query):
     return matched_records
 
 
-# --- ІНТЕРФЕЙС ---
+# --- ІНТЕРФЕЙС ПРОГРАМИ ---
 st.title("🔎 Система пошуку по захищеній базі")
 st.info("⚡ База даних переведена на ультра-швидкий бінарний індекс.")
 
-main_col, history_col = st.columns()
+main_col, history_col = st.columns(2)
 
 with main_col:
     st.markdown("### Введіть дані для пошуку:")
@@ -260,7 +253,7 @@ with main_col:
             st.warning("Нічого не знайдено за вашим запитом.")
 
 
-# --- ІСТОРІЯ ПОШУКУ З ПОВТОРНИМ КЛІКОМ ---
+# --- ВІДОБРАЖЕННЯ ІСТОРІЇ ПОШУКУ (ПОДІЛ ВИПРАВЛЕНО) ---
 with history_col:
     st.markdown("### 🕒 Історія пошуку:")
     if st.session_state["search_history"]:
@@ -294,3 +287,4 @@ with history_col:
             st.session_state["input_ipn"] = ""
             st.rerun()
     else:
+        st.write("*Історія порожня*")
