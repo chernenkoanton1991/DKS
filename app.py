@@ -40,7 +40,7 @@ if "search_history" not in st.session_state:
 if "found_entries" not in st.session_state:
     st.session_state["found_entries"] = None
 
-# Тимчасові змінні для заповнення полів введення (потрібні для повтору з історії)
+# Тимчасові змінні для заповнення полів введення
 if "input_pib" not in st.session_state:
     st.session_state["input_pib"] = ""
 if "input_dr" not in st.session_state:
@@ -131,7 +131,6 @@ main_col, history_col = st.columns(2)
 with main_col:
     st.markdown("### Введіть дані для пошуку:")
 
-    # Поля введення тепер прив'язані до значень у session_state
     search_pib = st.text_input(
         "Введіть ПІБ (можна частково):", value=st.session_state["input_pib"]
     )
@@ -147,19 +146,16 @@ with main_col:
         if not (search_pib.strip() or search_dr.strip() or search_ipn.strip()):
             st.warning("Будь ласка, заповніть хоча б одне поле для пошуку.")
         else:
-            # Створюємо структурований запис для історії
             history_labels = []
             if search_pib.strip():
                 history_labels.append(f"ПІБ: '{search_pib.strip()}'")
             if search_dr.strip():
                 history_labels.append(f"ДН: '{search_dr.strip()}'")
             if search_ipn.strip():
-                history_entry_ipn = search_ipn.strip()
-                history_labels.append(f"РНОКПП: '{history_entry_ipn}'")
+                history_labels.append(f"РНОКПП: '{search_ipn.strip()}'")
 
             full_text = ", ".join(history_labels)
 
-            # Об'єкт історії, що містить і текст, і збережені параметри для повтору
             new_history_item = {
                 "text": full_text,
                 "pib": search_pib.strip(),
@@ -167,7 +163,6 @@ with main_col:
                 "ipn": search_ipn.strip(),
             }
 
-            # Перевіряємо дублікати
             if (
                 not st.session_state["search_history"]
                 or st.session_state["search_history"][-1]["text"] != full_text
@@ -179,7 +174,6 @@ with main_col:
                     search_pib, search_dr, search_ipn
                 )
 
-    # ВІДОБРАЖЕННЯ РЕЗУЛЬТАТІВ ПОШУКУ
     if st.session_state["found_entries"] is not None:
         entries = st.session_state["found_entries"]
         st.subheader(f"📊 Знайдено збігів: {len(entries)}")
@@ -220,38 +214,34 @@ with main_col:
             st.warning("Нічого не знайдено за вашим запитом.")
 
 
-# --- ІСТОРІЯ ПОШУКУ З ФУНКЦІЄЮ ПОВТОРУ ---
+# --- ІСТОРІЯ ПОШУКУ З ПОВТОРНИМ КЛІКОМ ---
 with history_col:
     st.markdown("### 🕒 Історія пошуку:")
     if st.session_state["search_history"]:
-        # Показуємо запити від нових до старих
         for h_idx, item in enumerate(
             reversed(st.session_state["search_history"])
         ):
-            # Створюємо унікальний ключ для кожної кнопки в циклі
             btn_key = f"replay_{len(st.session_state['search_history']) - 1 - h_idx}"
 
             st.write(f"• {item['text']}")
 
-            # Кнопка для автоматичного перезапуску саме цього пошуку
-            if st.button("🔄 Повторити пошук", key=btn_key, size="small"):
-                # 1. Записуємо старі дані в поля введення
+            # ВИПРАВЛЕНО: Видалено параметр size="small", який викликав помилку
+            if st.button("🔄 Повторити цей пошук", key=btn_key):
                 st.session_state["input_pib"] = item["pib"]
                 st.session_state["input_dr"] = item["dr"]
                 st.session_state["input_ipn"] = item["ipn"]
 
-                # 2. Миттєво запускаємо пошук за цими параметрами
                 st.session_state["found_entries"] = execute_fast_feather_search(
                     item["pib"], item["dr"], item["ipn"]
                 )
                 st.rerun()
 
             st.markdown(
-                "<div style='margin-bottom:10px;'></div>",
+                "<div style='margin-bottom:15px; border-bottom: 1px dashed #ddd;'></div>",
                 unsafe_allow_html=True,
             )
 
-        if st.button("Очистити історію"):
+        if st.button("🗑️ Очистити всю історію"):
             st.session_state["search_history"] = []
             st.session_state["found_entries"] = None
             st.session_state["input_pib"] = ""
